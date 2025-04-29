@@ -1,0 +1,34 @@
+services:
+  jenkins:
+    image: jenkins/jenkins:lts
+    privileged: true
+    user: root
+    ports:
+      - 8080:8080
+      - 50000:50000
+    container_name: jenkins-I4c
+    volumes:
+      - "../storage/jenkins_home:/var/jenkins_home"
+    links:
+      - "db:database"
+      - "laravel-agent"
+  db:
+    image: mysql:latest
+    user: root
+    container_name: mysql_I4c
+    environment:
+      MYSQL_ROOT_PASSWORD: example
+    volumes:
+      - "../storage/mysql:/var/lib/mysql"
+  laravel-agent:
+    build: ./laravel-agent
+    image: i4c/jenkins-agent:latest
+    container_name: jenkins-laravel-agent-I4C
+
+    environment:
+      - JENKINS_URL=http://localhost:8080
+      - JENKINS_AGENT_NAME=laravel-agent-I4C
+      - "JENKINS_AGENT_SSH_PUBKEY=ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPMf2QRTsnQjd070H/PCDn4mHP1nzo7z1sBgBEsdsYEg makara@makara-VivoBook-ASUSLaptop-X521UA-M533UA"
+# replace with the actual secret from Jenkins
+    volumes:
+      - "/mnt/mint-extra/DevOp/storage/laravel-agent:/var/jenkins_home"
