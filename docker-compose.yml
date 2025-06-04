@@ -1,0 +1,20 @@
+services:
+  control-machine-i4d:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: control-machine-i4d-tp06
+    volumes:
+      - "./ansible:/ansible"
+    links:
+      - server1-i4d-tp06
+  server1-i4d-tp06:
+    build: laravel-image/
+    environment:
+      - user=nginx
+    container_name: server1-i4d-tp06
+    volumes:
+      - "./html:/var/www/html"
+    ports:
+      - "80:80"
+      - "22:22"

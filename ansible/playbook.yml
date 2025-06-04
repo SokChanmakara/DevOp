@@ -1,0 +1,337 @@
+---
+- name: Setup Laravel Websites on Remote Server
+  hosts: myservers
+  become: yes
+  vars:
+    staging_path: /var/www/html/staging
+    production_path: /var/www/html/production
+    git_repo: "https://github.com/SokChanmakara/I4_IP_S2.git"  # Replace with your actual Git repository
+    apache_user: www-data
+    
+  tasks:
+    # Environment Checkup
+    - name: Check if Apache2 is installed
+      package_facts:
+        manager: auto
+        
+    - name: Install additional packages if needed
+      apt:
+        name: 
+          - apache2
+          - composer
+        state: present
+        update_cache: yes
+      when: "'apache2' not in ansible_facts.packages"
+      
+    - name: Start Apache2 service (container-friendly)
+      command: service apache2 start
+      ignore_errors: yes
+      register: apache_start_result
+        
+    - name: Check Apache2 service status
+      command: service apache2 status
+      register: apache_status
+      failed_when: false
+      
+    - name: Display Apache2 status
+      debug:
+        msg: "Apache2 service status: {{ apache_status.stdout }}"
+        
+    # Apache Virtual Hosts Configuration
+    - name: Create staging virtual host configuration
+      copy:
+        content: |
+          <VirtualHost *:80>
+              ServerName staging.gici4d2025.com
+              DocumentRoot {{ staging_path }}/public
+              
+              <Directory {{ staging_path }}/public>
+                  AllowOverride All
+                  Require all granted
+              </Directory>
+              
+              ErrorLog ${APACHE_LOG_DIR}/staging_error.log
+              CustomLog ${APACHE_LOG_DIR}/staging_access.log combined
+          </VirtualHost>
+        dest: /etc/apache2/sites-available/staging.conf
+        
+    - name: Create production virtual host configuration
+      copy:
+        content: |
+          <VirtualHost *:80>
+              ServerName gici4d2025.com
+              DocumentRoot {{ production_path }}/public
+              
+              <Directory {{ production_path }}/public>
+                  AllowOverride All
+                  Require all granted
+              </Directory>
+              
+              ErrorLog ${APACHE_LOG_DIR}/production_error.log
+              CustomLog ${APACHE_LOG_DIR}/production_access.log combined
+          </VirtualHost>
+        dest: /etc/apache2/sites-available/production.conf
+        
+    - name: Enable Apache2 modules
+      apache2_module:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - rewrite
+        - ssl
+      ignore_errors: yes
+      
+    - name: Enable staging site
+      command: a2ensite staging.conf
+      ignore_errors: yes
+      
+    - name: Enable production site
+      command: a2ensite production.conf
+      ignore_errors: yes
+      
+    - name: Disable default site
+      command: a2dissite 000-default.conf
+      ignore_errors: yes
+      
+    # Website 1: Staging Setup
+    - name: Create staging directory
+      file:
+        path: "{{ staging_path }}"
+        state: directory
+        owner: "{{ apache_user }}"
+        group: "{{ apache_user }}"
+        mode: '0755'
+        
+    - name: Clone or update staging repository
+      git:
+        repo: "{{ git_repo }}"
+        dest: "{{ staging_path }}"
+        force: yes
+        update: yes
+      become_user: "{{ apache_user }}"
+      register: staging_git_result
+      ignore_errors: yes
+      
+    - name: Check if .env.example exists
+      stat:
+        path: "{{ staging_path }}/.env.example"
+      register: env_example_staging
+      
+    - name: Copy .env.example to .env for staging
+      copy:
+        src: "{{ staging_path }}/.env.example"
+        dest: "{{ staging_path }}/.env"
+        remote_src: yes
+        owner: "{{ apache_user }}"
+        group: "{{ apache_user }}"
+        mode: '0644'
+      when: env_example_staging.stat.exists
+        
+    - name: Configure staging .env file
+      lineinfile:
+        path: "{{ staging_path }}/.env"
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+        create: yes
+      loop:
+        - { regexp: '^DB_HOST=', line: 'DB_HOST=localhost' }
+        - { regexp: '^DB_DATABASE=', line: 'DB_DATABASE=staging_db' }
+        - { regexp: '^APP_ENV=', line: 'APP_ENV=staging' }
+        - { regexp: '^APP_DEBUG=', line: 'APP_DEBUG=true' }
+        
+    - name: Run composer install for staging
+      composer:
+        command: install
+        working_dir: "{{ staging_path }}"
+      become_user: "{{ apache_user }}"
+      register: staging_composer_result
+      ignore_errors: yes
+      
+    - name: Generate Laravel app key for staging
+      command: php artisan key:generate
+      args:
+        chdir: "{{ staging_path }}"
+      become_user: "{{ apache_user }}"
+      ignore_errors: yes
+      
+    - name: Check if package.json exists for staging
+      stat:
+        path: "{{ staging_path }}/package.json"
+      register: package_json_staging
+      
+    - name: Run npm install for staging
+      npm:
+        path: "{{ staging_path }}"
+        state: present
+      become_user: "{{ apache_user }}"
+      when: package_json_staging.stat.exists
+      ignore_errors: yes
+      
+    - name: Run npm build for staging
+      command: npm run build
+      args:
+        chdir: "{{ staging_path }}"
+      become_user: "{{ apache_user }}"
+      register: staging_npm_result
+      when: package_json_staging.stat.exists
+      ignore_errors: yes
+      
+    # Website 2: Production Setup
+    - name: Create production directory
+      file:
+        path: "{{ production_path }}"
+        state: directory
+        owner: "{{ apache_user }}"
+        group: "{{ apache_user }}"
+        mode: '0755'
+        
+    - name: Clone or update production repository
+      git:
+        repo: "{{ git_repo }}"
+        dest: "{{ production_path }}"
+        force: yes
+        update: yes
+      become_user: "{{ apache_user }}"
+      register: production_git_result
+      ignore_errors: yes
+      
+    - name: Check if .env.example exists for production
+      stat:
+        path: "{{ production_path }}/.env.example"
+      register: env_example_production
+      
+    - name: Copy .env.example to .env for production
+      copy:
+        src: "{{ production_path }}/.env.example"
+        dest: "{{ production_path }}/.env"
+        remote_src: yes
+        owner: "{{ apache_user }}"
+        group: "{{ apache_user }}"
+        mode: '0644'
+      when: env_example_production.stat.exists
+        
+    - name: Configure production .env file
+      lineinfile:
+        path: "{{ production_path }}/.env"
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+        create: yes
+      loop:
+        - { regexp: '^DB_HOST=', line: 'DB_HOST=localhost' }
+        - { regexp: '^DB_DATABASE=', line: 'DB_DATABASE=prod_db' }
+        - { regexp: '^APP_ENV=', line: 'APP_ENV=production' }
+        - { regexp: '^APP_DEBUG=', line: 'APP_DEBUG=false' }
+        
+    - name: Run composer install for production
+      composer:
+        command: install
+        arguments: '--optimize-autoloader --no-dev'
+        working_dir: "{{ production_path }}"
+      become_user: "{{ apache_user }}"
+      register: production_composer_result
+      ignore_errors: yes
+      
+    - name: Generate Laravel app key for production
+      command: php artisan key:generate
+      args:
+        chdir: "{{ production_path }}"
+      become_user: "{{ apache_user }}"
+      ignore_errors: yes
+      
+    - name: Check if package.json exists for production
+      stat:
+        path: "{{ production_path }}/package.json"
+      register: package_json_production
+      
+    - name: Run npm install for production
+      npm:
+        path: "{{ production_path }}"
+        state: present
+      become_user: "{{ apache_user }}"
+      when: package_json_production.stat.exists
+      ignore_errors: yes
+      
+    - name: Run npm build for production
+      command: npm run build
+      args:
+        chdir: "{{ production_path }}"
+      become_user: "{{ apache_user }}"
+      register: production_npm_result
+      when: package_json_production.stat.exists
+      ignore_errors: yes
+      
+    # Set proper permissions
+    - name: Set permissions for staging storage and bootstrap/cache
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ apache_user }}"
+        group: "{{ apache_user }}"
+        mode: '0775'
+        recurse: yes
+      loop:
+        - "{{ staging_path }}/storage"
+        - "{{ staging_path }}/bootstrap/cache"
+      ignore_errors: yes
+        
+    - name: Set permissions for production storage and bootstrap/cache
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ apache_user }}"
+        group: "{{ apache_user }}"
+        mode: '0775'
+        recurse: yes
+      loop:
+        - "{{ production_path }}/storage"
+        - "{{ production_path }}/bootstrap/cache"
+      ignore_errors: yes
+
+    # Restart Apache to apply configuration changes
+    - name: Restart Apache2 service
+      command: service apache2 restart
+      ignore_errors: yes
+      register: apache_restart_result
+        
+    # Email results
+    - name: Prepare deployment summary
+      set_fact:
+        deployment_summary: |
+          Laravel Deployment Summary:
+          ===========================
+          
+          Environment Check:
+          - Apache2 Status: {{ apache_status.stdout }}
+          - Apache2 Start: {{ 'Success' if apache_start_result.rc == 0 else 'Warning' }}
+          - Apache2 Restart: {{ 'Success' if apache_restart_result.rc == 0 else 'Warning' }}
+          
+          Staging Website:
+          - Path: {{ staging_path }}
+          - Git Clone: {{ 'Success' if staging_git_result.changed else 'No changes' }}
+          - Composer Install: {{ 'Success' if not staging_composer_result.failed else 'Failed' }}
+          
+          Production Website:
+          - Path: {{ production_path }}
+          - Git Clone: {{ 'Success' if production_git_result.changed else 'No changes' }}
+          - Composer Install: {{ 'Success' if not production_composer_result.failed else 'Failed' }}
+          
+          Deployment completed at: {{ ansible_date_time.iso8601 }}
+          
+    - name: Send email with deployment results
+      mail:
+        to: sokchanmakara04@gmail.com  
+        subject: "Laravel Deployment Results - {{ ansible_date_time.date }}"
+        body: "{{ deployment_summary }}"
+        from: ansible@{{ inventory_hostname }}
+      delegate_to: localhost
+      ignore_errors: yes
+      
+    - name: Display deployment summary
+      debug:
+        msg: "{{ deployment_summary }}"
+        
+  handlers:
+    - name: restart apache2
+      systemd:
+        name: apache2
+        state: restarted
