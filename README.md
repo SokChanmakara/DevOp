@@ -1,106 +1,165 @@
 # Laravel Deployment with Ansible
 
-This Ansible project sets up 2 Laravel websites (staging and production) on a remote server.
+This project sets up 2 Laravel websites (staging and production) using Ansible automation in Docker containers.
 
-## Prerequisites
+## 🚀 Quick Start (Next Time)
 
-1. Ansible installed on your local machine
-2. SSH access to the remote server
-3. Target server should be Ubuntu/Debian based
+**Just run this one command:**
 
-## Configuration
-
-### 1. Update Inventory
-Edit `inventory.ini` to match your server details:
-```ini
-[myservers]
-your-server ansible_host=your-server-ip ansible_user=root ansible_ssh_pass=your-password ansible_port=22
-```
-
-### 2. Update Git Repository
-In `playbook.yml`, update the `git_repo` variable to point to your actual Laravel repository:
-```yaml
-git_repo: "https://github.com/your-username/your-laravel-repo.git"
-```
-
-### 3. Update Email Configuration
-In `playbook.yml`, update the email address in the "Send email with deployment results" task:
-```yaml
-to: your-email@domain.com
-```
-
-## What the Playbook Does
-
-### Environment Checkup:
-- ✅ Checks if Apache2 is running (installs if missing)
-- ✅ Configures Apache2 virtual hosts for both websites
-- ✅ Sets up proper directory structure
-
-### Website 1 (Staging):
-- ✅ Creates `/var/www/html/staging` directory
-- ✅ Clones/updates from Git repository
-- ✅ Copies `.env.example` to `.env`
-- ✅ Configures `.env` with:
-  - DB_HOST: localhost
-  - DB_DATABASE: staging_db
-  - APP_ENV: staging
-- ✅ Runs `composer install`
-- ✅ Runs `npm install` and `npm run build`
-- ✅ Sets proper permissions
-
-### Website 2 (Production):
-- ✅ Creates `/var/www/html/production` directory
-- ✅ Clones/updates from Git repository
-- ✅ Copies `.env.example` to `.env`
-- ✅ Configures `.env` with:
-  - DB_HOST: localhost
-  - DB_DATABASE: prod_db
-  - APP_ENV: production
-- ✅ Runs `composer install --optimize-autoloader --no-dev`
-- ✅ Runs `npm install` and `npm run build`
-- ✅ Sets proper permissions
-
-### Results:
-- ✅ Sends email with deployment results
-- ✅ Displays deployment summary
-
-## Usage
-
-### Option 1: Use the deployment script
 ```bash
-cd ansible
-./deploy.sh
+cd /mnt/mint-extra/DevOp/TP6
+./start.sh
 ```
 
-### Option 2: Run manually
+That's it! The script will automatically:
+
+- Stop any existing containers
+- Build and start new containers
+- Run Ansible deployment
+- Set up both staging and production environments
+- Test everything for you
+
+## 🌐 How to Access in Browser
+
+### Method 1: Modify Hosts File (Recommended)
+
+**On Linux:**
+
 ```bash
-cd ansible
-
-# Test connection
-ansible myservers -m ping
-
-# Run the playbook
-ansible-playbook playbook.yml -v
+sudo nano /etc/hosts
 ```
 
-## Virtual Host Configuration
+**Add these lines:**
 
-The playbook creates two Apache virtual hosts:
+```
+127.0.0.1   gici4d2025.com
+127.0.0.1   staging.gici4d2025.com
+```
 
-1. **Staging**: `staging.gici4d2025.com` → `/var/www/html/staging/public`
-2. **Production**: `gici4d2025.com` → `/var/www/html/production/public`
+**Save and exit, then access:**
 
-## Notes
+- Production: http://gici4d2025.com
+- Staging: http://staging.gici4d2025.com
 
-- The playbook uses `www-data` as the Apache user (standard for Ubuntu/Debian)
-- All tasks run with proper user permissions
-- Laravel storage and cache directories get proper permissions (775)
-- Production environment uses optimized composer install
-- Both sites will have proper Laravel .env configuration
+### Method 2: Browser Developer Tools
 
-## Troubleshooting
+1. Open http://localhost in your browser
+2. Open Developer Tools (F12)
+3. Go to Network tab
+4. Refresh the page
+5. Right-click on the request → "Edit and Resend"
+6. Add header: `Host: gici4d2025.com` (for production) or `Host: staging.gici4d2025.com` (for staging)
 
-1. **Connection issues**: Check your inventory.ini file and SSH credentials
-2. **Permission errors**: Ensure the ansible user has sudo privileges
-3. **Git issues**: Make sure the repository URL is accessible from the remote server
-4. **Email issues**: Configure proper SMTP settings on the remote server for email functionality
+### Method 3: Browser Extensions
+
+Install a "Host Header" extension for Chrome/Firefox to easily switch between environments.
+
+### Method 4: Command Line Testing
+
+```bash
+# Test production
+curl -H "Host: gici4d2025.com" http://localhost
+
+# Test staging
+curl -H "Host: staging.gici4d2025.com" http://localhost
+```
+
+## 📁 Manual Steps (If Needed)
+
+If you prefer to run manually instead of using `./start.sh`:
+
+### 1. Start Containers
+
+```bash
+docker compose down
+docker compose up --build -d
+```
+
+### 2. Test Ansible Connection
+
+```bash
+docker compose exec control-machine-i4d sh -c "cd /ansible && ansible myservers -m ping"
+```
+
+### 3. Run Deployment
+
+```bash
+docker compose exec control-machine-i4d sh -c "cd /ansible && ansible-playbook playbook.yml -v"
+```
+
+### 4. Access Websites
+
+Follow the browser access methods above.
+
+## 🐛 Troubleshooting
+
+### If websites show "File not found":
+
+```bash
+# Restart nginx
+docker compose exec server1-i4d-tp06 sh -c "nginx -t && pkill nginx || true && nginx"
+```
+
+### If containers won't start:
+
+```bash
+# Clean up and rebuild
+docker compose down --volumes
+docker system prune -f
+docker compose up --build -d
+```
+
+### Check container status:
+
+```bash
+docker compose ps
+docker compose logs server1-i4d-tp06
+```
+
+## 🏗️ What This Setup Includes
+
+✅ **Infrastructure:**
+
+- Ansible control machine (Alpine Linux)
+- Target server with PHP 8.3 + Nginx
+- SSH connectivity between containers
+
+✅ **Applications:**
+
+- Production Laravel site (`/var/www/html/production`)
+- Staging Laravel site (`/var/www/html/staging`)
+- Proper nginx virtual hosts
+- Environment-specific configurations
+
+✅ **Deployment:**
+
+- Automated Git repository cloning
+- Composer dependency installation
+- Laravel environment configuration
+- Proper file permissions
+
+## 📊 Container Details
+
+| Container                  | Purpose                      | Ports        |
+| -------------------------- | ---------------------------- | ------------ |
+| `control-machine-i4d-tp06` | Ansible controller           | -            |
+| `server1-i4d-tp06`         | Web server (Nginx + PHP-FPM) | 80:80, 22:22 |
+
+## 🔧 Configuration Files
+
+- `docker-compose.yml` - Container orchestration
+- `ansible/playbook.yml` - Deployment automation
+- `ansible/inventory.ini` - Server inventory
+- `laravel-image/` - Web server Docker image
+- `start.sh` - One-command startup script
+
+## 💡 Development Workflow
+
+1. **Make changes** to your Laravel code
+2. **Run deployment**: `./start.sh` or manual Ansible commands
+3. **Test both environments** using different hostnames
+4. **Deploy to real servers** by updating `inventory.ini` with actual server IPs
+
+---
+
+**Pro Tip:** Bookmark both `http://gici4d2025.com` and `http://staging.gici4d2025.com` after adding them to your hosts file for easy access!

@@ -38,7 +38,8 @@ RUN docker-php-ext-install \
     opcache \
     curl \
     xml
-RUN apt-get install -y git
+RUN apt-get update && apt-get install -y git
+
 # Install Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
@@ -49,12 +50,24 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
 RUN mkdir -p /var/www/html/production/public
 RUN mkdir -p /var/www/html/staging/public
 RUN mkdir -p /etc/nginx/sites-enabled
+
+# Remove default nginx site
+RUN rm -f /etc/nginx/sites-enabled/default
+
+# Copy and enable custom nginx configurations
 COPY gici4d2025.com.conf /etc/nginx/sites-available/gici4d2025.com.conf
 RUN ln -s /etc/nginx/sites-available/gici4d2025.com.conf /etc/nginx/sites-enabled/
 COPY gici4d2025.staging.conf /etc/nginx/sites-available/gici4d2025.staging.conf
 RUN ln -s /etc/nginx/sites-available/gici4d2025.staging.conf /etc/nginx/sites-enabled/
-RUN apt-get install -y openssh-server
+
+# Setup SSH server
+RUN apt-get update && apt-get install -y openssh-server
 RUN echo "root:P@ssw0rd1" | chpasswd
+RUN mkdir /var/run/sshd
+RUN echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config
+
+# Set proper ownership
+RUN chown -R www-data:www-data /var/www/html
 
 EXPOSE 80
 EXPOSE 22
